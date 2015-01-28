@@ -3,6 +3,7 @@ package nwui
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func Test_Window(t *testing.T) {
@@ -11,5 +12,9 @@ func Test_Window(t *testing.T) {
 	button.OnClick(func() {
 		fmt.Println("button clicked!")
 	})
+	go func() {
+		time.Sleep(time.Second * 10)
+		button.SetText("hello!!")
+	}()
 	w.Show(button)
 }

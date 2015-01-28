@@ -45,8 +45,7 @@ var wsURL = "ws://%v/ws";
 var socket = new WebSocket(wsURL);
 socket.onmessage = function(evt) {
 	var data = JSON.parse(evt.data);
-	alert(data["type"]);
-	alert(data["value"]);
+	eval(data["type"]+"('"+data["value"]+"')")
 };
 %v
 </script>
@@ -54,7 +53,7 @@ socket.onmessage = function(evt) {
 </html>`
 
 // 生成控件ID
-func NewControlID() string { return strconv.FormatInt(r.Int63(), 36) }
+func NewControlID() string { return "_" + strconv.FormatInt(r.Int63(), 36) }
 
 // 创建新窗口
 func NewWindow(title string, x, y uint) Window {
@@ -191,10 +190,16 @@ func (w *Window) OnExit(f func() bool) {
 
 // 创建新的按钮
 func NewButton(text string) Button {
+	id := NewControlID()
 	return &button{
-		id:     NewControlID(),
+		id:     id,
 		text:   text,
 		events: make(map[string]func(v string)),
+		javaScript: `
+function ` + id + `SetText(text) {
+	var button = document.getElementById('` + id + `');
+	button.textContent = text;
+}`,
 	}
 }
 
@@ -209,7 +214,7 @@ type Button interface {
 type button struct {
 	id         string
 	text       string
-	javascript string
+	javaScript string
 	events     map[string]func(v string)
 	send       func(f, v string)
 }
@@ -227,7 +232,7 @@ func (b *button) genHTML() string {
 }
 
 func (b *button) genJavaScript() string {
-	return b.javascript
+	return b.javaScript
 }
 
 // 按钮被点击触发的事件
@@ -237,7 +242,7 @@ func (b *button) OnClick(f func()) {
 	b.events[b.id+"OnClick"] = func(v string) {
 		f()
 	}
-	b.javascript += `
+	b.javaScript += `
 (function() {
 	var button = document.getElementById('` + b.id + `');
 	button.onclick = function(){
