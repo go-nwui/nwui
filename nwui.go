@@ -18,6 +18,7 @@ package nwui
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
@@ -29,6 +30,28 @@ import (
 
 // 用于生成随机数
 var r = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+var temp = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>%v</title>
+<style>%v</style>
+</head>
+<body>
+%v
+<script>
+var wsURL = "ws://%v/ws";
+var socket = new WebSocket(wsURL);
+socket.onmessage = function(evt) {
+	var data = JSON.parse(evt.data);
+	alert(data["type"]);
+	alert(data["value"]);
+};
+%v
+</script>
+</body>
+</html>`
 
 // 生成控件ID
 func NewControlID() string { return strconv.FormatInt(r.Int63(), 36) }
@@ -63,9 +86,11 @@ func (w *Window) UseTheme(t Theme) {
 func (w *Window) Show(con ...Control) {
 	go func() {
 		var (
-			allEvents map[string]func(v string)
-			message   = make(chan []byte)
-			upgrader  = websocket.Upgrader{
+			html      string
+			js        string = w.theme.JavaScript
+			allEvents        = make(map[string]func(v string))
+			message          = make(chan []byte)
+			upgrader         = websocket.Upgrader{
 				ReadBufferSize:  1024,
 				WriteBufferSize: 1024,
 			}
@@ -82,6 +107,8 @@ func (w *Window) Show(con ...Control) {
 		)
 
 		for _, v := range con {
+			html += v.genHTML()
+			js += v.genJavaScript()
 			v.setSendFunc(sendFunc)
 			for e, f := range v.getEvents() {
 				allEvents[e] = f
@@ -101,6 +128,7 @@ func (w *Window) Show(con ...Control) {
 					messageType, p, err := conn.ReadMessage()
 					if err != nil {
 						log.Println(err)
+						return
 					}
 
 					if messageType == websocket.TextMessage {
@@ -108,6 +136,7 @@ func (w *Window) Show(con ...Control) {
 						err = json.Unmarshal(p, &msg)
 						if err != nil {
 							log.Println(err)
+							return
 						}
 						// 判断事件是否为内置事件
 						// 进行相应处理
@@ -139,7 +168,8 @@ func (w *Window) Show(con ...Control) {
 				}
 			}
 		})
-		http.HandleFunc("/", func(http.ResponseWriter, *http.Request) {
+		http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(rw, temp, w.title, w.theme.CSS, html, "127.0.0.1:8080", js)
 		})
 		err := http.ListenAndServe("localhost:8080", nil)
 		if err != nil {
@@ -154,40 +184,63 @@ func (w *Window) OnExit(f func() bool) {
 }
 
 func NewButton(text string) Button {
-	return Button{
+	return &button{
 		id:     NewControlID(),
 		text:   text,
 		events: make(map[string]func(v string)),
 	}
 }
 
-// 按钮控件
-type Button struct {
-	id     string
-	text   string
-	events map[string]func(v string)
-	send   func(f, v string)
+type Button interface {
+	Control
+	OnClick(f func())
+	SetText(text string)
+	GetText() string
 }
 
-func (b *Button) getEvents() map[string]func(v string) {
+// 按钮控件
+type button struct {
+	id         string
+	text       string
+	javascript string
+	events     map[string]func(v string)
+	send       func(f, v string)
+}
+
+func (b *button) getEvents() map[string]func(v string) {
 	return b.events
 }
 
-func (b *Button) setSendFunc(f func(f, v string)) {
+func (b *button) setSendFunc(f func(f, v string)) {
 	b.send = f
 }
 
+func (b *button) genHTML() string {
+	return "<input id=\"" + b.id + "\" type=\"button\" value=\"" + b.text + "\"/> "
+}
+
+func (b *button) genJavaScript() string {
+	return b.javascript
+}
+
 // 按钮被点击触发的事件
-func (b *Button) OnClick(f func()) {
+func (b *button) OnClick(f func()) {
 	// 当收到b.id+"OnClick"事件时
 	// 会执行函数f
 	b.events[b.id+"OnClick"] = func(v string) {
 		f()
 	}
+	b.javascript += `
+(function() {
+	var button = document.getElementById('` + b.id + `');
+	button.onclick = function(){
+		socket.send('{"type": "` + b.id + `OnClick","value": ""}')
+	};
+})();`
 }
 
 // 设置按钮文字
-func (b *Button) SetText(text string) {
+func (b *button) SetText(text string) {
 	// b.send会去调用javascript里名为
 	// b.id+"SetText"的函数
 	// 并传入参数text
@@ -196,7 +249,7 @@ func (b *Button) SetText(text string) {
 }
 
 // 获取按钮文字
-func (b *Button) GetText() string {
+func (b *button) GetText() string {
 	return b.text
 }
 
@@ -208,9 +261,12 @@ type Theme struct {
 type Control interface {
 	getEvents() map[string]func(v string)
 	setSendFunc(func(f, v string))
+
+	genHTML() string
+	genJavaScript() string
 }
 
 type wsMsg struct {
-	Type  string
-	Value string
+	Type  string `json:"type"`
+	Value string `json:"value"`
 }
