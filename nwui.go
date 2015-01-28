@@ -67,6 +67,7 @@ func NewWindow(title string, x, y uint) Window {
 	return w
 }
 
+// nwui窗口
 type Window struct {
 	title string
 	theme Theme
@@ -79,10 +80,13 @@ type Window struct {
 	onExit   func() bool
 }
 
+// 使用主题（CSS+JavaScript）
 func (w *Window) UseTheme(t Theme) {
 	w.theme = t
 }
 
+// 显示窗口
+// 必须在全部控件设置完毕后才能调用
 func (w *Window) Show(con ...Control) {
 	go func() {
 		var (
@@ -179,10 +183,13 @@ func (w *Window) Show(con ...Control) {
 	<-w.exit
 }
 
+// 窗口关闭时触发的事件
+// 返回false则阻止窗口关闭
 func (w *Window) OnExit(f func() bool) {
 	w.onExit = f
 }
 
+// 创建新的按钮
 func NewButton(text string) Button {
 	return &button{
 		id:     NewControlID(),
@@ -191,6 +198,7 @@ func NewButton(text string) Button {
 	}
 }
 
+// 按钮控件
 type Button interface {
 	Control
 	OnClick(f func())
@@ -198,7 +206,6 @@ type Button interface {
 	GetText() string
 }
 
-// 按钮控件
 type button struct {
 	id         string
 	text       string
@@ -216,7 +223,7 @@ func (b *button) setSendFunc(f func(f, v string)) {
 }
 
 func (b *button) genHTML() string {
-	return "<input id=\"" + b.id + "\" type=\"button\" value=\"" + b.text + "\"/> "
+	return "<button id=\"" + b.id + "\"/>" + b.text + "</button>"
 }
 
 func (b *button) genJavaScript() string {
@@ -234,7 +241,7 @@ func (b *button) OnClick(f func()) {
 (function() {
 	var button = document.getElementById('` + b.id + `');
 	button.onclick = function(){
-		socket.send('{"type": "` + b.id + `OnClick","value": ""}')
+		socket.send(JSON.stringify({"type": "` + b.id + `OnClick","value": ""}));
 	};
 })();`
 }
@@ -253,11 +260,13 @@ func (b *button) GetText() string {
 	return b.text
 }
 
+// nwui主题
 type Theme struct {
 	CSS        string
 	JavaScript string
 }
 
+// nwui控件
 type Control interface {
 	getEvents() map[string]func(v string)
 	setSendFunc(func(f, v string))
