@@ -58,6 +58,22 @@ window.onunload=function(){
 </body>
 </html>`
 
+var defaultTheme = Theme{
+	CSS: `button {
+    border: 4px solid #304ffe;
+    color: #fff;
+    background: #304ffe;
+    padding: 6px 12px;
+}
+button:hover {
+    background: transparent;
+    color: #304ffe;
+}
+button:active {
+    box-shadow: 1px 2px 7px rgba(0, 0, 0, 0.3) inset;
+}`,
+}
+
 func printInfo(v ...interface{}) {
 	log.Println(append([]interface{}{"[nwui][Info]"}, v...)...)
 }
@@ -73,6 +89,7 @@ func NewControlID() string { return "_" + strconv.FormatInt(r.Int63(), 36) }
 func NewWindow(title string, x, y uint) Window {
 	w := Window{
 		title: title,
+		theme: defaultTheme,
 		exit:  make(chan bool),
 	}
 	w.size.x = x
