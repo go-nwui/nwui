@@ -22,6 +22,7 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -91,6 +92,22 @@ func (w *Window) UseTheme(t Theme) {
 // 显示窗口
 // 必须在全部控件设置完毕后才能调用
 func (w *Window) Show(con ...Control) {
+	var port string
+	// 查找可用端口
+	for i := 8080; i <= 65536; i++ {
+		p := strconv.Itoa(i)
+		ln, err := net.Listen("tcp", "localhost:"+p)
+		if err != nil {
+			continue
+		} else {
+			port = p
+			ln.Close()
+			break
+		}
+	}
+	if port == "" {
+		panic("no port can use")
+	}
 	go func() {
 		var (
 			html      string
@@ -176,10 +193,11 @@ func (w *Window) Show(con ...Control) {
 			}
 		})
 		http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(rw, temp, w.title, w.theme.CSS, html, "127.0.0.1:8080", js)
+			fmt.Fprintf(rw, temp, w.title, w.theme.CSS, html, "localhost:"+port, js)
 			r.Body.Close()
 		})
-		err := http.ListenAndServe("localhost:8080", nil)
+		log.Println("running on localhost:" + port)
+		err := http.ListenAndServe("localhost:"+port, nil)
 		if err != nil {
 			panic(err)
 		}
