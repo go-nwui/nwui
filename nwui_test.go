@@ -16,5 +16,8 @@ func Test_Window(t *testing.T) {
 		time.Sleep(time.Second * 10)
 		button.SetText("hello!!")
 	}()
+	w.OnExit(func() {
+		fmt.Println("EXIT!")
+	})
 	w.Show(button)
 }

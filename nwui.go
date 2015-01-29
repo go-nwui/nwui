@@ -19,6 +19,7 @@ package nwui
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -47,6 +48,9 @@ socket.onmessage = function(evt) {
 	var data = JSON.parse(evt.data);
 	eval(data["type"]+"('"+data["value"]+"')")
 };
+window.onunload=function(){
+	socket.send(JSON.stringify({"type": "exit","value": ""}));
+}
 %v
 </script>
 </body>
@@ -76,7 +80,7 @@ type Window struct {
 	}
 	controls []Control
 	exit     chan bool
-	onExit   func() bool
+	onExit   func()
 }
 
 // 使用主题（CSS+JavaScript）
@@ -120,7 +124,7 @@ func (w *Window) Show(con ...Control) {
 
 		http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
 			conn, err := upgrader.Upgrade(rw, r, nil)
-			if err != nil {
+			if err != nil && err != io.EOF {
 				log.Println(err)
 				return
 			}
@@ -146,9 +150,9 @@ func (w *Window) Show(con ...Control) {
 						switch msg.Type {
 						case "exit":
 							if w.onExit != nil {
-								if w.onExit() {
-									w.exit <- true
-								}
+								w.onExit()
+								w.exit <- true
+								return
 							}
 						}
 						// 执行事件所绑定的函数
@@ -173,6 +177,7 @@ func (w *Window) Show(con ...Control) {
 		})
 		http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(rw, temp, w.title, w.theme.CSS, html, "127.0.0.1:8080", js)
+			r.Body.Close()
 		})
 		err := http.ListenAndServe("localhost:8080", nil)
 		if err != nil {
@@ -183,8 +188,7 @@ func (w *Window) Show(con ...Control) {
 }
 
 // 窗口关闭时触发的事件
-// 返回false则阻止窗口关闭
-func (w *Window) OnExit(f func() bool) {
+func (w *Window) OnExit(f func()) {
 	w.onExit = f
 }
 
