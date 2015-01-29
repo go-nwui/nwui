@@ -24,6 +24,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -56,6 +57,14 @@ window.onunload=function(){
 </script>
 </body>
 </html>`
+
+func printInfo(v ...interface{}) {
+	log.Println(append([]interface{}{"[nwui][Info]"}, v...)...)
+}
+
+func printError(v ...interface{}) {
+	log.Println(append([]interface{}{"[nwui][Error]"}, v...)...)
+}
 
 // 生成控件ID
 func NewControlID() string { return "_" + strconv.FormatInt(r.Int63(), 36) }
@@ -106,7 +115,8 @@ func (w *Window) Show(con ...Control) {
 		}
 	}
 	if port == "" {
-		panic("no port can use")
+		printError("no port can use")
+		os.Exit(1)
 	}
 	go func() {
 		var (
@@ -124,7 +134,8 @@ func (w *Window) Show(con ...Control) {
 					Value: v,
 				})
 				if err != nil {
-					log.Println(err)
+					printError(err)
+					return
 				}
 				message <- msg
 			}
@@ -142,7 +153,7 @@ func (w *Window) Show(con ...Control) {
 		http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
 			conn, err := upgrader.Upgrade(rw, r, nil)
 			if err != nil && err != io.EOF {
-				log.Println(err)
+				printError(err)
 				return
 			}
 
@@ -151,7 +162,7 @@ func (w *Window) Show(con ...Control) {
 				for {
 					messageType, p, err := conn.ReadMessage()
 					if err != nil {
-						log.Println(err)
+						printError(err)
 						return
 					}
 
@@ -159,7 +170,7 @@ func (w *Window) Show(con ...Control) {
 						var msg wsMsg
 						err = json.Unmarshal(p, &msg)
 						if err != nil {
-							log.Println(err)
+							printError(err)
 							return
 						}
 						// 判断事件是否为内置事件
@@ -177,7 +188,7 @@ func (w *Window) Show(con ...Control) {
 						if ok {
 							f(msg.Value)
 						} else {
-							log.Println("unfind event:", msg.Type)
+							printError("unfind event:", msg.Type)
 						}
 					}
 				}
@@ -188,7 +199,7 @@ func (w *Window) Show(con ...Control) {
 				msg := <-message
 				err = conn.WriteMessage(websocket.TextMessage, msg)
 				if err != nil {
-					log.Println(err)
+					printError(err)
 				}
 			}
 		})
@@ -196,7 +207,7 @@ func (w *Window) Show(con ...Control) {
 			fmt.Fprintf(rw, temp, w.title, w.theme.CSS, html, "localhost:"+port, js)
 			r.Body.Close()
 		})
-		log.Println("running on localhost:" + port)
+		printInfo("running on localhost:" + port)
 		err := http.ListenAndServe("localhost:"+port, nil)
 		if err != nil {
 			panic(err)
