@@ -49,8 +49,8 @@ var socket = new WebSocket(wsURL);
 socket.onmessage = function(evt) {
 	var data = JSON.parse(evt.data);
 	eval(data["type"]+"('"+data["value"]+"')")
-};
-window.onunload=function(){
+}
+window.onunload = function() {
 	socket.send(JSON.stringify({"type": "exit","value": ""}));
 }
 %v
@@ -61,16 +61,47 @@ window.onunload=function(){
 var defaultTheme = Theme{
 	CSS: `button {
     border: 4px solid #304ffe;
-    color: #fff;
+    color: white;
     background: #304ffe;
     padding: 6px 12px;
 }
 button:hover {
-    background: transparent;
+    background: white;
     color: #304ffe;
 }
 button:active {
+    color: #fff;
+    background: #304ffe;
     box-shadow: 1px 2px 7px rgba(0, 0, 0, 0.3) inset;
+}
+.frame {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+    width: 100%;
+    height: 32px;
+    background-color: #424242;
+    -webkit-app-region: drag;
+}
+.frame .title {
+    color: white;
+    position: absolute;
+    left: 12px;
+    width: 80%;
+    margin-top: 6px;
+    margin-bottom: 6px;
+    font-size: 11pt;
+}
+.frame button#close {
+    position: absolute;
+    left: auto;
+    right: 12px;
+    width: auto;
+    font-size: 11pt;
+    -webkit-app-region: no-drag;
+}
+.main {
+    margin-top: 40px;
 }`,
 }
 
@@ -120,7 +151,7 @@ func (w *Window) UseTheme(t Theme) {
 func (w *Window) Show(con ...Control) {
 	var port string
 	// 查找可用端口
-	for i := 8080; i <= 65536; i++ {
+	for i := 7072; i <= 65536; i++ {
 		p := strconv.Itoa(i)
 		ln, err := net.Listen("tcp", "localhost:"+p)
 		if err != nil {
@@ -159,9 +190,9 @@ func (w *Window) Show(con ...Control) {
 		)
 
 		for _, v := range con {
+			v.setSendFunc(sendFunc)
 			html += v.genHTML()
 			js += v.genJavaScript()
-			v.setSendFunc(sendFunc)
 			for e, f := range v.getEvents() {
 				allEvents[e] = f
 			}
@@ -313,6 +344,66 @@ func (b *button) SetText(text string) {
 // 获取按钮文字
 func (b *button) GetText() string {
 	return b.text
+}
+
+// 创建一个新的自定义窗口边框
+// 一个 Window 中只能有一个 Frame
+func NewFrame(title string, con ...Control) Frame {
+	return &frame{
+		title:    title,
+		controls: con,
+		events:   make(map[string]func(v string)),
+	}
+}
+
+// 窗口边框
+type Frame interface {
+	Control
+}
+
+type frame struct {
+	title    string
+	js       string
+	controls []Control
+	events   map[string]func(v string)
+	send     func(f, v string)
+}
+
+func (f *frame) getEvents() map[string]func(v string) {
+	return f.events
+}
+
+func (f *frame) setSendFunc(fc func(f, v string)) {
+	f.send = fc
+}
+
+func (f *frame) genHTML() string {
+	// 转换内部控件
+	var html string
+	for _, v := range f.controls {
+		v.setSendFunc(f.send)
+		html += v.genHTML()
+		f.js += v.genJavaScript()
+		for e, fc := range v.getEvents() {
+			f.events[e] = fc
+		}
+	}
+	return `<div class="frame">
+<a class="title">` + f.title + `</a>
+<button id="close">x</button>
+</div>
+<div class="main">
+` + html + `
+</div>`
+}
+
+func (f *frame) genJavaScript() string {
+	return f.js + `
+(function() {
+	document.getElementById("close").onclick = function(){
+		open(' ', '_self').close();
+	}
+})();`
 }
 
 // nwui主题

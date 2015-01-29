@@ -19,5 +19,5 @@ func Test_Window(t *testing.T) {
 	w.OnExit(func() {
 		fmt.Println("EXIT!")
 	})
-	w.Show(button)
+	w.Show(NewFrame("window", button))
 }
