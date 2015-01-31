@@ -337,7 +337,9 @@ func (b *button) SetText(text string) {
 	// b.send会去调用javascript里名为
 	// b.id+"SetText"的函数
 	// 并传入参数text
-	b.send(b.id+"SetText", text)
+	if b.send != nil {
+		b.send(b.id+"SetText", text)
+	}
 	b.text = text
 }
 
