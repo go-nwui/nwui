@@ -17,18 +17,19 @@
 package nwui
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
+	//"encoding/json"
+	//"fmt"
+	//"io"
 	"log"
 	"math/rand"
-	"net"
-	"net/http"
-	"os"
+	//"net"
+	//"net/http"
+	//"os"
+	"reflect"
 	"strconv"
 	"time"
 
-	"github.com/gorilla/websocket"
+	//"github.com/gorilla/websocket"
 )
 
 // 用于生成随机数
@@ -116,29 +117,23 @@ func printError(v ...interface{}) {
 // 生成控件ID
 func NewControlID() string { return "_" + strconv.FormatInt(r.Int63(), 36) }
 
-// 创建新窗口
-func NewWindow(title string, x, y uint) Window {
-	w := Window{
-		title: title,
-		theme: defaultTheme,
-		exit:  make(chan bool),
-	}
-	w.size.x = x
-	w.size.y = y
-	return w
+func GetConByID(id string) interface{} {
+	return nil
 }
 
 // nwui窗口
 type Window struct {
-	title string
-	theme Theme
-	size  struct {
-		x uint
-		y uint
-	}
-	controls []Control
-	exit     chan bool
-	onExit   func()
+	Title     string
+	Width     int
+	Height    int
+	MaxWidth  int
+	MaxHeight int
+	MinWidth  int
+	MinHeight int
+	Controls  []interface{}
+	OnExit    func()
+	theme     Theme
+	exit      chan bool
 }
 
 // 使用主题（CSS+JavaScript）
@@ -148,8 +143,8 @@ func (w *Window) UseTheme(t Theme) {
 
 // 显示窗口
 // 必须在全部控件设置完毕后才能调用
-func (w *Window) Show(con ...Control) {
-	var port string
+func (w *Window) Show() {
+	/*var port string
 	// 查找可用端口
 	for i := 7072; i <= 65536; i++ {
 		p := strconv.Itoa(i)
@@ -189,7 +184,7 @@ func (w *Window) Show(con ...Control) {
 			}
 		)
 
-		for _, v := range con {
+		for _, v := range w.controls {
 			v.setSendFunc(sendFunc)
 			html += v.genHTML()
 			js += v.genJavaScript()
@@ -225,8 +220,8 @@ func (w *Window) Show(con ...Control) {
 						// 进行相应处理
 						switch msg.Type {
 						case "exit":
-							if w.onExit != nil {
-								w.onExit()
+							if w.OnExit != nil {
+								w.OnExit()
 								w.exit <- true
 								return
 							}
@@ -252,7 +247,7 @@ func (w *Window) Show(con ...Control) {
 			}
 		})
 		http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(rw, temp, w.title, w.theme.CSS, html, "localhost:"+port, js)
+			fmt.Fprintf(rw, temp, w.Title, w.theme.CSS, html, "localhost:"+port, js)
 			r.Body.Close()
 		})
 		printInfo("running on localhost:" + port)
@@ -262,13 +257,13 @@ func (w *Window) Show(con ...Control) {
 		}
 	}()
 	<-w.exit
+	*/
+	for _, v := range w.Controls {
+		reflect.ValueOf(v).MethodByName("Init").Call([]reflect.Value{})
+	}
 }
 
-// 窗口关闭时触发的事件
-func (w *Window) OnExit(f func()) {
-	w.onExit = f
-}
-
+/*
 // 创建新的按钮
 func NewButton(text string) Button {
 	id := NewControlID()
@@ -407,6 +402,21 @@ func (f *frame) genJavaScript() string {
 	}
 })();`
 }
+*/
+
+type Button struct {
+	Control
+	ID         string
+	Text       string
+	OnClick    func()
+	javaScript string
+	events     map[string]func(v string)
+	send       func(f, v string)
+}
+
+func (b *Button) Init() {
+	print("button init!!")
+}
 
 // nwui主题
 type Theme struct {
@@ -415,12 +425,11 @@ type Theme struct {
 }
 
 // nwui控件
-type Control interface {
-	getEvents() map[string]func(v string)
-	setSendFunc(func(f, v string))
-
-	genHTML() string
-	genJavaScript() string
+type Control struct {
+	getEvents     func() map[string]func(v string)
+	setSendFunc   func(func(f, v string))
+	genHTML       func() string
+	genJavaScript func() string
 }
 
 type wsMsg struct {
