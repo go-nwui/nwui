@@ -1,12 +1,12 @@
 package nwui
 
 import (
+	"fmt"
 	"testing"
 )
 
 func Test_Window(t *testing.T) {
-	var w *Window
-	w = &Window{
+	w := &Window{
 		Title:  "window",
 		Width:  800,
 		Height: 600,
@@ -15,7 +15,8 @@ func Test_Window(t *testing.T) {
 				ID:   "btn0",
 				Text: "button",
 				OnClick: func() {
-					println(GetConByID("btn0").(*Button).Text)
+					// println(GetConByID("btn0").(*Button).Text)
+					fmt.Println("button clicked!")
 				},
 			},
 		},
