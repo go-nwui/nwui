@@ -145,8 +145,6 @@ func (w *Window) UseTheme(t Theme) {
 // 显示窗口
 // 必须在全部控件设置完毕后才能调用
 func (w *Window) Show() {
-	w.exit = make(chan bool)
-
 	// 查找可用端口
 	var port string
 	for i := 7072; i <= 65536; i++ {
@@ -163,6 +161,14 @@ func (w *Window) Show() {
 	if port == "" {
 		printError("no port can use")
 		os.Exit(1)
+	}
+
+	w.exit = make(chan bool)
+	if w.theme.CSS == "" {
+		w.theme.CSS = defaultTheme.CSS
+	}
+	if w.theme.JavaScript == "" {
+		w.theme.JavaScript = defaultTheme.JavaScript
 	}
 
 	var (
