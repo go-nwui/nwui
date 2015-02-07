@@ -125,6 +125,9 @@ func GetConByID(id string) interface{} {
 // TODO: 将窗口也变为控件
 // TODO: 移植自定义窗口控件
 // TODO: 分离nwui框架和控件
+// TODO: 完善根据ID获取控件
+// TODO: 更多控件+主题
+// TODO: 自动启动nwjs
 
 // nwui窗口
 type Window struct {
