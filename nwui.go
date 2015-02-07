@@ -122,6 +122,10 @@ func GetConByID(id string) interface{} {
 	return nil
 }
 
+// TODO: 将窗口也变为控件
+// TODO: 移植自定义窗口控件
+// TODO: 分离nwui框架和控件
+
 // nwui窗口
 type Window struct {
 	Title     string
