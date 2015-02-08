@@ -118,14 +118,11 @@ func printError(v ...interface{}) {
 // 生成控件ID
 func NewControlID() string { return "_" + strconv.FormatInt(r.Int63(), 36) }
 
-func GetConByID(id string) interface{} {
-	return nil
-}
+func GetConByID(id string) interface{} { return cons[id] }
 
 // TODO: 将窗口也变为控件
 // TODO: 移植自定义窗口控件
 // TODO: 分离nwui框架和控件
-// TODO: 完善根据ID获取控件
 // TODO: 更多控件+主题
 // TODO: 自动启动nwjs
 
@@ -190,6 +187,11 @@ func (w *Window) Show() {
 	)
 	// 初始化控件
 	for _, v := range w.Controls {
+		id := reflect.ValueOf(v).MethodByName("GetID").Call([]reflect.Value{})[0].String()
+		if _, ok := cons[id]; ok {
+			panic("duplicate id: " + id)
+		}
+		cons[id] = v
 		// 返回html string, javascript string, events map[string]func(v string)
 		v := reflect.ValueOf(v).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
 
@@ -199,69 +201,71 @@ func (w *Window) Show() {
 			allEvents[vv.String()] = v[2].MapIndex(vv).Interface().(func(v string))
 		}
 	}
-	go func() {
-		http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
-			conn, err := upgrader.Upgrade(rw, r, nil)
-			if err != nil && err != io.EOF {
-				printError(err)
-				return
-			}
 
-			// 用于接收事件
-			go func() {
-				for {
-					messageType, p, err := conn.ReadMessage()
-					if err != nil {
-						printError(err)
-						return
-					}
+	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(rw, temp, w.Title, w.theme.CSS, html, "localhost:"+port, js)
+		r.Body.Close()
+	})
+	http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(rw, r, nil)
+		if err != nil && err != io.EOF {
+			printError(err)
+			return
+		}
 
-					if messageType == websocket.TextMessage {
-						var msg EventMsg
-						err = json.Unmarshal(p, &msg)
-						if err != nil {
-							printError(err)
-							return
-						}
-						// 判断事件是否为内置事件
-						// 进行相应处理
-						switch msg.Event {
-						case "exit":
-							if w.OnExit != nil {
-								w.OnExit()
-							}
-							w.exit <- true
-							return
-						}
-						// 执行事件所绑定的函数
-						f, ok := allEvents[msg.Event]
-						if ok {
-							f(msg.Value)
-						} else {
-							printError("unfind event:", msg.Event)
-						}
-					}
-				}
-			}()
-
+		// 用于接收事件
+		go func() {
 			for {
-				// 发送消息给前端
-				m := <-sender
-				msg, err := json.Marshal(&m)
+				messageType, p, err := conn.ReadMessage()
 				if err != nil {
 					printError(err)
 					return
 				}
-				err = conn.WriteMessage(websocket.TextMessage, msg)
-				if err != nil {
-					printError(err)
+
+				if messageType == websocket.TextMessage {
+					var msg EventMsg
+					err = json.Unmarshal(p, &msg)
+					if err != nil {
+						printError(err)
+						return
+					}
+					// 判断事件是否为内置事件
+					// 进行相应处理
+					switch msg.Event {
+					case "exit":
+						if w.OnExit != nil {
+							w.OnExit()
+						}
+						w.exit <- true
+						return
+					}
+					// 执行事件所绑定的函数
+					f, ok := allEvents[msg.Event]
+					if ok {
+						f(msg.Value)
+					} else {
+						printError("unfind event:", msg.Event)
+					}
 				}
 			}
-		})
-		http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(rw, temp, w.Title, w.theme.CSS, html, "localhost:"+port, js)
-			r.Body.Close()
-		})
+		}()
+
+		for {
+			// 发送消息给前端
+			m := <-sender
+			msg, err := json.Marshal(&m)
+			if err != nil {
+				printError(err)
+				return
+			}
+			err = conn.WriteMessage(websocket.TextMessage, msg)
+			if err != nil {
+				printError(err)
+			}
+		}
+	})
+
+	go func() {
 		printInfo("running on localhost:" + port)
 		err := http.ListenAndServe("localhost:"+port, nil)
 		if err != nil {
@@ -369,6 +373,8 @@ function ` + b.ID + `SetText(text) {
 	}
 	return html, js, events
 }
+
+func (b *Button) GetID() string { return b.ID }
 
 // 设置按钮文字
 func (b *Button) SetText(text string) {
