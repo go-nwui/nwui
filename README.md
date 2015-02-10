@@ -10,6 +10,31 @@ node-webkit UI for Go
 
 ![screenshot](screenshot.png)
 
+## Example
+
+创建一个包含按钮的窗口：
+
+```go
+&Window{
+	Title:  "window",
+	Width:  800,
+	Height: 600,
+	OnExit: func() {
+		fmt.Println("exit")
+	},
+	Controls: []interface{}{
+		&Button{
+			ID:   "btn0",
+			Text: "button",
+			OnClick: func() {
+				text := GetConByID("btn0").(*Button).Text
+				fmt.Println(text, "clicked!")
+			},
+		},
+	},
+}
+```
+
 ## nwui控件编写指南
 
 ### 基础接口
