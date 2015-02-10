@@ -1,39 +1,8 @@
-# nwui
+# nwui 文档
 
-[![Gitter](https://img.shields.io/badge/GITTER-JOIN%20CHAT%20%E2%86%92-brightgreen.svg?style=flat)](https://gitter.im/go-nwui/nwui?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![Go Walker](https://img.shields.io/badge/Go%20Walker-API%20Documentation-green.svg?style=flat)](https://gowalker.org/github.com/go-nwui/nwui)
-[![GoDoc](https://img.shields.io/badge/GoDoc-API%20Documentation-blue.svg?style=flat)](http://godoc.org/github.com/go-nwui/nwui)
+标签（空格分隔）： 未分类
 
-node-webkit UI for Go
-
-## Screenshot
-
-![screenshot](screenshot.png)
-
-## Example
-
-创建一个包含按钮的窗口：
-
-```go
-&Window{
-	Title:  "window",
-	Width:  800,
-	Height: 600,
-	OnExit: func() {
-		fmt.Println("exit")
-	},
-	Controls: []interface{}{
-		&Button{
-			ID:   "btn0",
-			Text: "button",
-			OnClick: func() {
-				text := GetConByID("btn0").(*Button).Text
-				fmt.Println(text, "clicked!")
-			},
-		},
-	},
-}
-```
+---
 
 ## nwui控件编写指南
 
@@ -44,13 +13,7 @@ node-webkit UI for Go
 以及有一个
 
 ```go
-Init(sender chan EventMsg) (string, Control, map[string]func(v string))
-```
-
-和一个
-
-```go
-GetID() string
+Init(sender chan EventMsg) (string, Control, map[string]map[string]func(v string))
 ```
 
 方法。
@@ -77,19 +40,19 @@ type Control struct {
 }
 ```
 
-控件的事件列表为`map[string]func(v string)`
+控件的事件列表为`map[string]map[string]func(v string)`
 
-map的key需要设置为事件名称，比如：
+第一个key为控件的ID，第二个key为这个控件的事件列表
 
 ```go
-events["ButtonOnClick"] = func(v string) {
-	b.OnClick()
+events[b.ID]["ButtonOnClick"] = func(v string) {
+		b.OnClick()
 }
 ```
 
-当事件触发时，value里的函数会被调用并传入前端发来的数据（如果数据为空那么可以忽略）
+之所以这么设计是为了当一个控件内含有多个同一类型的控件时，方便区分事件
 
-`GetID`方法返回这个控件的`ID`（因为反射指针的限制所以只能多加这么一个方法才能获取ID）
+当事件触发时，value里的函数会被调用并传入前端发来的数据（如果数据为空那么可以忽略）
 
 ### 控件初始化
 
@@ -150,7 +113,7 @@ function ButtonSetText(id,text) {
 	if b.OnClick != nil {
 		// 如果用户使用了OnClick事件
 		// 那么添加事件
-		events["ButtonOnClick"] = func(v string) {
+		events[b.ID]["ButtonOnClick"] = func(v string) {
 			b.OnClick()
 		}
 	}

@@ -1,12 +1,9 @@
 /*
  Copyright 2015 Bluek404
-
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
-
      http://www.apache.org/licenses/LICENSE-2.0
-
  Unless required by applicable law or agreed to in writing, software
  distributed under the License is distributed on an "AS IS" BASIS,
  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -121,12 +118,12 @@ func (w *Window) Show() {
 	w.exit = make(chan bool)
 
 	var (
-		html      string
-		js        string
-		css       string
-		x         = make(map[string]bool) // 用于记录同一类型控件是否存在
-		allEvents = make(map[string]func(v string))
-		upgrader  = websocket.Upgrader{
+		html     string
+		js       string
+		css      string
+		x        = make(map[string]bool) // 用于记录同一类型控件是否存在
+		events   = make(map[string]map[string]func(v string))
+		upgrader = websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		}
@@ -134,16 +131,6 @@ func (w *Window) Show() {
 	)
 	// 初始化控件
 	for _, v := range w.Controls {
-		id := reflect.ValueOf(v).MethodByName("GetID").Call([]reflect.Value{})[0].String()
-
-		// 检查ID是否冲突
-		if _, ok := cons[id]; ok {
-			panic("duplicate id: " + id)
-		}
-
-		// 添加到控件列表中
-		cons[id] = v
-
 		// 返回html string, javascript string, events map[string]func(v string)
 		vv := reflect.ValueOf(v).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
 
@@ -158,10 +145,17 @@ func (w *Window) Show() {
 			js += con.JavaScript
 		}
 
-		for _, vvv := range vv[2].MapKeys() {
-			// 添加事件
-			// id+事件名称
-			allEvents[id+vvv.String()] = vv[2].MapIndex(vvv).Interface().(func(v string))
+		// events的定义为map[string]map[string]func(v string)
+		// 第一个key为控件的ID，第二个key为这个控件的事件列表
+		for id, vv := range vv[2].Interface().(map[string]map[string]func(v string)) {
+			events[id] = vv
+
+			// 检查ID是否冲突
+			if _, ok := cons[id]; ok {
+				panic("duplicate id: " + id)
+			}
+			// 添加到控件列表中
+			cons[id] = v
 		}
 	}
 
@@ -203,11 +197,11 @@ func (w *Window) Show() {
 						return
 					}
 					// 执行事件所绑定的函数
-					f, ok := allEvents[msg.ID+msg.Event]
+					f, ok := events[msg.ID][msg.Event]
 					if ok {
 						f(msg.Value)
 					} else {
-						printError("unfind event:", msg.ID+msg.Event)
+						printError("unfind event:", msg.ID, msg.Event)
 					}
 				}
 			}
@@ -278,12 +272,10 @@ func NewFrame(title string, con ...Control) Frame {
 		events:   make(map[string]func(v string)),
 	}
 }
-
 // 窗口边框
 type Frame interface {
 	Control
 }
-
 type frame struct {
 	title    string
 	js       string
@@ -291,15 +283,12 @@ type frame struct {
 	events   map[string]func(v string)
 	send     func(f, v string)
 }
-
 func (f *frame) getEvents() map[string]func(v string) {
 	return f.events
 }
-
 func (f *frame) setSendFunc(fc func(f, v string)) {
 	f.send = fc
 }
-
 func (f *frame) genHTML() string {
 	// 转换内部控件
 	var html string
@@ -319,7 +308,6 @@ func (f *frame) genHTML() string {
 ` + html + `
 </div>`
 }
-
 func (f *frame) genJavaScript() string {
 	return f.js + `
 (function() {
@@ -337,11 +325,11 @@ type Button struct {
 	sender  chan EventMsg
 }
 
-func (b *Button) Init(sender chan EventMsg) (string, Control, map[string]func(v string)) {
+func (b *Button) Init(sender chan EventMsg) (string, Control, map[string]map[string]func(v string)) {
 	if b.ID == "" {
 		b.ID = NewControlID()
 	}
-	events := make(map[string]func(v string))
+	events := map[string]map[string]func(v string){b.ID: make(map[string]func(v string))}
 	b.sender = sender
 
 	con := Control{
@@ -381,14 +369,12 @@ function ButtonSetText(id,text) {
 	if b.OnClick != nil {
 		// 如果用户使用了OnClick事件
 		// 那么添加事件
-		events["ButtonOnClick"] = func(v string) {
+		events[b.ID]["ButtonOnClick"] = func(v string) {
 			b.OnClick()
 		}
 	}
 	return html, con, events
 }
-
-func (b *Button) GetID() string { return b.ID }
 
 // 设置按钮文字
 func (b *Button) SetText(text string) {
