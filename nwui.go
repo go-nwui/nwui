@@ -50,7 +50,7 @@ var wsURL = "ws://%v/ws";
 var socket = new WebSocket(wsURL);
 socket.onmessage = function(evt) {
 	var data = JSON.parse(evt.data);
-	eval(data["event"]+"('"+data["value"]+"')")
+	eval(data["event"]+"('"+data["id"]+"','"+data["value"]+"')");
 }
 window.onunload = function() {
 	socket.send(JSON.stringify({"event": "exit","value": ""}));
@@ -59,52 +59,6 @@ window.onunload = function() {
 </script>
 </body>
 </html>`
-	defaultTheme = Theme{
-		CSS: `button {
-    border: 4px solid #304ffe;
-    color: white;
-    background: #304ffe;
-    padding: 6px 12px;
-}
-button:hover {
-    background: white;
-    color: #304ffe;
-}
-button:active {
-    color: #fff;
-    background: #304ffe;
-    box-shadow: 1px 2px 7px rgba(0, 0, 0, 0.3) inset;
-}
-.frame {
-    position: absolute;
-    left: 0px;
-    top: 0px;
-    width: 100%;
-    height: 32px;
-    background-color: #424242;
-    -webkit-app-region: drag;
-}
-.frame .title {
-    color: white;
-    position: absolute;
-    left: 12px;
-    width: 80%;
-    margin-top: 6px;
-    margin-bottom: 6px;
-    font-size: 11pt;
-}
-.frame button#close {
-    position: absolute;
-    left: auto;
-    right: 12px;
-    width: auto;
-    font-size: 11pt;
-    -webkit-app-region: no-drag;
-}
-.main {
-    margin-top: 40px;
-}`,
-	}
 )
 
 func printInfo(v ...interface{}) {
@@ -137,13 +91,7 @@ type Window struct {
 	MinHeight int
 	Controls  []interface{}
 	OnExit    func()
-	theme     Theme
 	exit      chan bool
-}
-
-// 使用主题（CSS+JavaScript）
-func (w *Window) UseTheme(t Theme) {
-	w.theme = t
 }
 
 // 显示窗口
@@ -168,18 +116,14 @@ func (w *Window) Show() {
 	}
 
 	w.exit = make(chan bool)
-	if w.theme.CSS == "" {
-		w.theme.CSS = defaultTheme.CSS
-	}
-	if w.theme.JavaScript == "" {
-		w.theme.JavaScript = defaultTheme.JavaScript
-	}
 
 	var (
 		html      string
-		js        string = w.theme.JavaScript
-		allEvents        = make(map[string]func(v string))
-		upgrader         = websocket.Upgrader{
+		js        string
+		css       string
+		x         = make(map[string]bool) // 用于记录同一类型控件是否存在
+		allEvents = make(map[string]func(v string))
+		upgrader  = websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		}
@@ -188,22 +132,38 @@ func (w *Window) Show() {
 	// 初始化控件
 	for _, v := range w.Controls {
 		id := reflect.ValueOf(v).MethodByName("GetID").Call([]reflect.Value{})[0].String()
+
+		// 检查ID是否冲突
 		if _, ok := cons[id]; ok {
 			panic("duplicate id: " + id)
 		}
-		cons[id] = v
-		// 返回html string, javascript string, events map[string]func(v string)
-		v := reflect.ValueOf(v).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
 
-		html += v[0].String()
-		js += v[1].String()
-		for _, vv := range v[2].MapKeys() {
-			allEvents[vv.String()] = v[2].MapIndex(vv).Interface().(func(v string))
+		// 添加到控件列表中
+		cons[id] = v
+
+		// 返回html string, javascript string, events map[string]func(v string)
+		vv := reflect.ValueOf(v).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
+
+		html += vv[0].String()
+		con := vv[1].Interface().(Control)
+
+		// 检查这种类型的控件是否已经存在
+		if _, ok := x[con.Name]; !ok {
+			x[con.Name] = true
+			// 添加控件的css和js
+			css += con.CSS
+			js += con.JavaScript
+		}
+
+		for _, vvv := range vv[2].MapKeys() {
+			// 添加事件
+			// id+事件名称
+			allEvents[id+vvv.String()] = vv[2].MapIndex(vvv).Interface().(func(v string))
 		}
 	}
 
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(rw, temp, w.Title, w.theme.CSS, html, "localhost:"+port, js)
+		fmt.Fprintf(rw, temp, w.Title, css, html, "localhost:"+port, js)
 		r.Body.Close()
 	})
 	http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
@@ -240,11 +200,11 @@ func (w *Window) Show() {
 						return
 					}
 					// 执行事件所绑定的函数
-					f, ok := allEvents[msg.Event]
+					f, ok := allEvents[msg.ID+msg.Event]
 					if ok {
 						f(msg.Value)
 					} else {
-						printError("unfind event:", msg.Event)
+						printError("unfind event:", msg.ID+msg.Event)
 					}
 				}
 			}
@@ -276,6 +236,36 @@ func (w *Window) Show() {
 }
 
 /*
+defaultTheme = `
+.frame {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+    width: 100%;
+    height: 32px;
+    background-color: #424242;
+    -webkit-app-region: drag;
+}
+.frame .title {
+    color: white;
+    position: absolute;
+    left: 12px;
+    width: 80%;
+    margin-top: 6px;
+    margin-bottom: 6px;
+    font-size: 11pt;
+}
+.frame button#close {
+    position: absolute;
+    left: auto;
+    right: 12px;
+    width: auto;
+    font-size: 11pt;
+    -webkit-app-region: no-drag;
+}
+.main {
+    margin-top: 40px;
+}`
 // 创建一个新的自定义窗口边框
 // 一个 Window 中只能有一个 Frame
 func NewFrame(title string, con ...Control) Frame {
@@ -338,40 +328,61 @@ func (f *frame) genJavaScript() string {
 */
 
 type Button struct {
-	Control
 	ID      string
 	Text    string
 	OnClick func()
 	sender  chan EventMsg
 }
 
-func (b *Button) Init(sender chan EventMsg) (string, string, map[string]func(v string)) {
+func (b *Button) Init(sender chan EventMsg) (string, Control, map[string]func(v string)) {
 	if b.ID == "" {
 		b.ID = NewControlID()
 	}
 	events := make(map[string]func(v string))
 	b.sender = sender
-	js := `
-function ` + b.ID + `SetText(text) {
-	var button = document.getElementById('` + b.ID + `');
+
+	con := Control{
+		Name: "Button",
+		CSS: `
+.button {
+    border: 4px solid #304ffe;
+    color: white;
+    background: #304ffe;
+    padding: 6px 12px;
+}
+.button:hover {
+    background: white;
+    color: #304ffe;
+}
+.button:active {
+    color: #fff;
+    background: #304ffe;
+    box-shadow: 1px 2px 7px rgba(0, 0, 0, 0.3) inset;
+}`,
+		JavaScript: `
+function ButtonSetText(id,text) {
+	var button = document.getElementById(id);
 	button.textContent = text;
-}`
-	html := "<button id=\"" + b.ID + "\"/>" + b.Text + "</button>"
+}
+(function() {
+	var buttons = document.getElementsByClassName('button');
+	for (var i = 0; i < buttons.length; i++) {
+		var button = buttons[i]
+		button.onclick = function(){
+			socket.send(JSON.stringify({"id": button.id, "event": "ButtonOnClick", "value": ""}));
+		};
+	}
+})();`,
+	}
+	html := "<button id=\"" + b.ID + "\"class=\"button\">" + b.Text + "</button>"
 	if b.OnClick != nil {
 		// 如果用户使用了OnClick事件
-		// 那么添加事件和js
-		events[b.ID+"OnClick"] = func(v string) {
+		// 那么添加事件
+		events["ButtonOnClick"] = func(v string) {
 			b.OnClick()
 		}
-		js += `
-(function() {
-	var button = document.getElementById('` + b.ID + `');
-	button.onclick = function(){
-		socket.send(JSON.stringify({"event": "` + b.ID + `OnClick","value": ""}));
-	};
-})();`
 	}
-	return html, js, events
+	return html, con, events
 }
 
 func (b *Button) GetID() string { return b.ID }
@@ -382,26 +393,19 @@ func (b *Button) SetText(text string) {
 	// b.id+"SetText"的函数
 	// 并传入参数text
 	if b.sender != nil {
-		b.sender <- EventMsg{b.ID + "SetText", text}
+		b.sender <- EventMsg{b.ID, "ButtonSetText", text}
 	}
 	b.Text = text
 }
 
-// nwui主题
-type Theme struct {
+type Control struct {
+	Name       string
 	CSS        string
 	JavaScript string
 }
 
-// nwui控件
-type Control struct {
-	getEvents     func() map[string]func(v string)
-	setSendFunc   func(func(f, v string))
-	genHTML       func() string
-	genJavaScript func() string
-}
-
 type EventMsg struct {
+	ID    string `json:"id"`
 	Event string `json:"event"`
 	Value string `json:"value"`
 }

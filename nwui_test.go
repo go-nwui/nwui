@@ -3,6 +3,7 @@ package nwui
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func Test_Window(t *testing.T) {
@@ -24,5 +25,13 @@ func Test_Window(t *testing.T) {
 			},
 		},
 	}
+
+	go func() {
+		time.Sleep(time.Second * 5)
+		btn := GetConByID("btn0").(*Button)
+		btn.SetText("text!")
+		fmt.Println(btn.Text)
+	}()
+
 	w.Show()
 }
