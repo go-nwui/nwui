@@ -52,8 +52,11 @@ socket.onmessage = function(evt) {
 	var data = JSON.parse(evt.data);
 	eval(data["event"]+"('"+data["id"]+"','"+data["value"]+"')");
 }
+function send(id, event, value) {
+	socket.send(JSON.stringify({"id":id, "event": event, "value": value}));
+}
 window.onunload = function() {
-	socket.send(JSON.stringify({"event": "exit","value": ""}));
+	send("", "exit", "");
 }
 %v
 </script>
@@ -369,7 +372,7 @@ function ButtonSetText(id,text) {
 	for (var i = 0; i < buttons.length; i++) {
 		var button = buttons[i]
 		button.onclick = function(){
-			socket.send(JSON.stringify({"id": button.id, "event": "ButtonOnClick", "value": ""}));
+			send(button.id, "ButtonOnClick", "");
 		};
 	}
 })();`,
@@ -389,23 +392,23 @@ func (b *Button) GetID() string { return b.ID }
 
 // 设置按钮文字
 func (b *Button) SetText(text string) {
-	// b.send会去调用javascript里名为
-	// b.id+"SetText"的函数
-	// 并传入参数text
+	// 这里的判断是防止控件还没有初始化
+	// sender还未赋值用户就调用
 	if b.sender != nil {
+		// ButtonSetText 为需要调用的js函数
 		b.sender <- EventMsg{b.ID, "ButtonSetText", text}
 	}
 	b.Text = text
 }
 
 type Control struct {
-	Name       string
-	CSS        string
-	JavaScript string
+	Name       string // 控件名称，不能和其他控件重复
+	CSS        string // 控件的css
+	JavaScript string // 控件的js
 }
 
 type EventMsg struct {
-	ID    string `json:"id"`
-	Event string `json:"event"`
-	Value string `json:"value"`
+	ID    string `json:"id"`    // 控件的ID
+	Event string `json:"event"` // 事件名称
+	Value string `json:"value"` // 想发送信息的内容，复杂内容推荐用json编码
 }
