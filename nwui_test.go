@@ -33,5 +33,5 @@ func Test_Window(t *testing.T) {
 		fmt.Println(btn.Text)
 	}()
 
-	w.Show()
+	Show(w)
 }

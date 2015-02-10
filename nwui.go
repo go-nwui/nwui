@@ -52,9 +52,6 @@ socket.onmessage = function(evt) {
 function send(id, event, value) {
 	socket.send(JSON.stringify({"id":id, "event": event, "value": value}));
 }
-window.onunload = function() {
-	send("", "exit", "");
-}
 %v
 </script>
 </body>
@@ -74,29 +71,9 @@ func NewControlID() string { return "_" + strconv.FormatInt(r.Int63(), 36) }
 
 func GetConByID(id string) interface{} { return cons[id] }
 
-// TODO: 将窗口也变为控件
-// TODO: 移植自定义窗口控件
-// TODO: 分离nwui框架和控件
-// TODO: 更多控件+主题
-// TODO: 自动启动nwjs
-
-// nwui窗口
-type Window struct {
-	Title     string
-	Width     int
-	Height    int
-	MaxWidth  int
-	MaxHeight int
-	MinWidth  int
-	MinHeight int
-	Controls  []interface{}
-	OnExit    func()
-	exit      chan bool
-}
-
 // 显示窗口
 // 必须在全部控件设置完毕后才能调用
-func (w *Window) Show() {
+func Show(window interface{}) {
 	// 查找可用端口
 	var port string
 	for i := 7072; i <= 65536; i++ {
@@ -115,13 +92,8 @@ func (w *Window) Show() {
 		os.Exit(1)
 	}
 
-	w.exit = make(chan bool)
-
 	var (
 		html     string
-		js       string
-		css      string
-		x        = make(map[string]bool) // 用于记录同一类型控件是否存在
 		events   = make(map[string]map[string]func(v string))
 		upgrader = websocket.Upgrader{
 			ReadBufferSize:  1024,
@@ -129,38 +101,24 @@ func (w *Window) Show() {
 		}
 		sender = make(chan EventMsg)
 	)
-	// 初始化控件
-	for _, v := range w.Controls {
-		// 返回html string, javascript string, events map[string]func(v string)
-		vv := reflect.ValueOf(v).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
 
-		html += vv[0].String()
-		con := vv[1].Interface().(Control)
+	// 返回html string, javascript string, events map[string]func(v string)
+	vv := reflect.ValueOf(window).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
 
-		// 检查这种类型的控件是否已经存在
-		if _, ok := x[con.Name]; !ok {
-			x[con.Name] = true
-			// 添加控件的css和js
-			css += con.CSS
-			js += con.JavaScript
-		}
+	html += vv[0].String()
+	con := vv[1].Interface().(Control)
 
-		// events的定义为map[string]map[string]func(v string)
-		// 第一个key为控件的ID，第二个key为这个控件的事件列表
-		for id, vv := range vv[2].Interface().(map[string]map[string]func(v string)) {
-			events[id] = vv
-
-			// 检查ID是否冲突
-			if _, ok := cons[id]; ok {
-				panic("duplicate id: " + id)
-			}
-			// 添加到控件列表中
-			cons[id] = v
-		}
+	// events的定义为map[string]map[string]func(v string)
+	// 第一个key为控件的ID，第二个key为这个控件的事件列表
+	for id, vv := range vv[2].Interface().(map[string]map[string]func(v string)) {
+		events[id] = vv
 	}
 
+	nwui := vv[3].Interface().(NWUI)
+	exit := vv[4].Interface().(chan bool)
+
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(rw, temp, w.Title, css, html, "localhost:"+port, js)
+		fmt.Fprintf(rw, temp, nwui.Name, con.CSS, html, "localhost:"+port, con.JavaScript)
 		r.Body.Close()
 	})
 	http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
@@ -186,16 +144,7 @@ func (w *Window) Show() {
 						printError(err)
 						return
 					}
-					// 判断事件是否为内置事件
-					// 进行相应处理
-					switch msg.Event {
-					case "exit":
-						if w.OnExit != nil {
-							w.OnExit()
-						}
-						w.exit <- true
-						return
-					}
+
 					// 执行事件所绑定的函数
 					f, ok := events[msg.ID][msg.Event]
 					if ok {
@@ -229,7 +178,88 @@ func (w *Window) Show() {
 			panic(err)
 		}
 	}()
-	<-w.exit
+
+	<-exit
+}
+
+// TODO: 移植自定义窗口控件
+// TODO: 分离nwui框架和控件
+// TODO: 更多控件+主题
+// TODO: 自动启动nwjs
+
+// nwui窗口
+type Window struct {
+	Title     string
+	Width     int
+	Height    int
+	MaxWidth  int
+	MaxHeight int
+	MinWidth  int
+	MinHeight int
+	Controls  []interface{}
+	OnExit    func()
+	exit      chan bool
+}
+
+func (w *Window) Init(sender chan EventMsg) (string, Control, map[string]map[string]func(v string), NWUI, chan bool) {
+	w.exit = make(chan bool)
+	id := NewControlID()
+
+	var (
+		html string
+		js   string = `
+window.onunload = function() {
+	send("` + id + `", "exit", "");
+}`
+		css    string
+		x      = make(map[string]bool) // 用于记录同一类型控件是否存在
+		events = map[string]map[string]func(v string){id: map[string]func(v string){"exit": func(v string) {
+			if w.OnExit != nil {
+				w.OnExit()
+			}
+			w.exit <- true
+			return
+		}}}
+	)
+	// 初始化控件
+	for _, v := range w.Controls {
+		// 返回html string, javascript string, events map[string]func(v string)
+		vv := reflect.ValueOf(v).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
+
+		html += vv[0].String()
+		con := vv[1].Interface().(Control)
+
+		// 检查这种类型的控件是否已经存在
+		if _, ok := x[con.Name]; !ok {
+			x[con.Name] = true
+			// 添加控件的css和js
+			css += con.CSS
+			js += con.JavaScript
+		}
+
+		// events的定义为map[string]map[string]func(v string)
+		// 第一个key为控件的ID，第二个key为这个控件的事件列表
+		for id, vv := range vv[2].Interface().(map[string]map[string]func(v string)) {
+			events[id] = vv
+
+			// 检查ID是否冲突
+			if _, ok := cons[id]; ok {
+				panic("duplicate id: " + id)
+			}
+			// 添加到控件列表中
+			cons[id] = v
+		}
+	}
+
+	con := Control{
+		Name:       "Window",
+		CSS:        css,
+		JavaScript: js,
+	}
+
+	return html, con, events, NWUI{
+		Name: w.Title,
+	}, w.exit
 }
 
 /*
@@ -397,4 +427,22 @@ type EventMsg struct {
 	ID    string `json:"id"`    // 控件的ID
 	Event string `json:"event"` // 事件名称
 	Value string `json:"value"` // 想发送信息的内容，复杂内容推荐用json编码
+}
+
+type NWUI struct {
+	Name   string     `json:"name"`
+	Main   string     `json:"main"`
+	Window NWUIWindow `json:"window"`
+}
+
+type NWUIWindow struct {
+	Show      bool   `json:"show"`
+	Toolbar   bool   `json:"toolbar"`
+	Position  string `json:"position"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	MinWidth  int    `json:min_width`
+	MinHeight int    `json:"min_height"`
+	MaxWidth  int    `json:max_width`
+	MaxHeight int    `json:"max_height"`
 }
