@@ -94,31 +94,38 @@ func Show(window interface{}) {
 
 	var (
 		html     string
-		events   = make(map[string]map[string]func(v string))
+		css      string
+		js       string
+		events   = make(map[string]func(v string))
 		upgrader = websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		}
 		sender = make(chan EventMsg)
+		x      = make(map[string]bool)
 	)
 
-	// 返回html string, javascript string, events map[string]func(v string)
 	vv := reflect.ValueOf(window).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
 
-	html += vv[0].String()
-	con := vv[1].Interface().(Control)
-
-	// events的定义为map[string]map[string]func(v string)
-	// 第一个key为控件的ID，第二个key为这个控件的事件列表
-	for id, vv := range vv[2].Interface().(map[string]map[string]func(v string)) {
-		events[id] = vv
+	vvv := vv[0].Interface().(Controls)
+	for id, con := range vvv {
+		if _, ok := x[con.Static.Name]; !ok {
+			css += con.Static.CSS
+			js += con.Static.JavaScript
+			x[con.Static.Name] = true
+		}
+		cons[id] = con.V
+		html += con.HTML
+		for event, f := range con.Events {
+			events[id+event] = f
+		}
 	}
 
-	nwui := vv[3].Interface().(NWUI)
-	exit := vv[4].Interface().(chan bool)
+	nwui := vv[1].Interface().(NWUI)
+	exit := vv[2].Interface().(chan bool)
 
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(rw, temp, nwui.Name, con.CSS, html, "localhost:"+port, con.JavaScript)
+		fmt.Fprintf(rw, temp, nwui.Name, css, html, "localhost:"+port, js)
 		r.Body.Close()
 	})
 	http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
@@ -146,11 +153,11 @@ func Show(window interface{}) {
 					}
 
 					// 执行事件所绑定的函数
-					f, ok := events[msg.ID][msg.Event]
+					f, ok := events[msg.ID+msg.Event]
 					if ok {
 						f(msg.Value)
 					} else {
-						printError("unfind event:", msg.ID, msg.Event)
+						printError("unfind event:", msg.ID+msg.Event)
 					}
 				}
 			}
@@ -201,63 +208,50 @@ type Window struct {
 	exit      chan bool
 }
 
-func (w *Window) Init(sender chan EventMsg) (string, Control, map[string]map[string]func(v string), NWUI, chan bool) {
+func (w *Window) Init(sender chan EventMsg) (Controls, NWUI, chan bool) {
 	w.exit = make(chan bool)
-	id := NewControlID()
 
 	var (
-		html string
-		js   string = `
+		id   = NewControlID()
+		cons = Controls{
+			id: Control{
+				Events: map[string]func(v string){"exit": func(v string) {
+					if w.OnExit != nil {
+						w.OnExit()
+					}
+					w.exit <- true
+					return
+				}},
+				Static: ConStatic{
+					Name: "Window",
+					JavaScript: `
 window.onunload = function() {
 	send("` + id + `", "exit", "");
-}`
-		css    string
-		x      = make(map[string]bool) // 用于记录同一类型控件是否存在
-		events = map[string]map[string]func(v string){id: map[string]func(v string){"exit": func(v string) {
-			if w.OnExit != nil {
-				w.OnExit()
-			}
-			w.exit <- true
-			return
-		}}}
+}`,
+				},
+			},
+		}
+		x = make(map[string]bool)
 	)
+
 	// 初始化控件
 	for _, v := range w.Controls {
 		// 返回html string, javascript string, events map[string]func(v string)
 		vv := reflect.ValueOf(v).MethodByName("Init").Call([]reflect.Value{reflect.ValueOf(sender)})
 
-		html += vv[0].String()
-		con := vv[1].Interface().(Control)
+		vvv := vv[0].Interface().(Controls)
 
-		// 检查这种类型的控件是否已经存在
-		if _, ok := x[con.Name]; !ok {
-			x[con.Name] = true
-			// 添加控件的css和js
-			css += con.CSS
-			js += con.JavaScript
-		}
-
-		// events的定义为map[string]map[string]func(v string)
-		// 第一个key为控件的ID，第二个key为这个控件的事件列表
-		for id, vv := range vv[2].Interface().(map[string]map[string]func(v string)) {
-			events[id] = vv
-
-			// 检查ID是否冲突
-			if _, ok := cons[id]; ok {
+		for id, con := range vvv {
+			// 检查ID是否重复
+			if _, ok := x[id]; ok {
 				panic("duplicate id: " + id)
 			}
-			// 添加到控件列表中
-			cons[id] = v
+
+			cons[id] = con
 		}
 	}
 
-	con := Control{
-		Name:       "Window",
-		CSS:        css,
-		JavaScript: js,
-	}
-
-	return html, con, events, NWUI{
+	return cons, NWUI{
 		Name: w.Title,
 	}, w.exit
 }
@@ -355,14 +349,8 @@ type Button struct {
 	sender  chan EventMsg
 }
 
-func (b *Button) Init(sender chan EventMsg) (string, Control, map[string]map[string]func(v string)) {
-	if b.ID == "" {
-		b.ID = NewControlID()
-	}
-	events := map[string]map[string]func(v string){b.ID: make(map[string]func(v string))}
-	b.sender = sender
-
-	con := Control{
+func (b *Button) Init(sender chan EventMsg) Controls {
+	static := ConStatic{
 		Name: "Button",
 		CSS: `
 .button {
@@ -395,15 +383,29 @@ function ButtonSetText(id,text) {
 	}
 })();`,
 	}
+
+	if b.ID == "" {
+		b.ID = NewControlID()
+	}
+	events := make(map[string]func(v string))
+	b.sender = sender
+
 	html := "<button id=\"" + b.ID + "\"class=\"button\">" + b.Text + "</button>"
 	if b.OnClick != nil {
 		// 如果用户使用了OnClick事件
 		// 那么添加事件
-		events[b.ID]["ButtonOnClick"] = func(v string) {
+		events["ButtonOnClick"] = func(v string) {
 			b.OnClick()
 		}
 	}
-	return html, con, events
+	return Controls{
+		b.ID: Control{
+			V:      b,
+			HTML:   html,
+			Static: static,
+			Events: events,
+		},
+	}
 }
 
 // 设置按钮文字
@@ -417,7 +419,16 @@ func (b *Button) SetText(text string) {
 	b.Text = text
 }
 
+type Controls map[string]Control
+
 type Control struct {
+	V      interface{}
+	HTML   string
+	Events map[string]func(v string)
+	Static ConStatic
+}
+
+type ConStatic struct {
 	Name       string // 控件名称，不能和其他控件重复
 	CSS        string // 控件的css
 	JavaScript string // 控件的js
