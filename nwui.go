@@ -422,10 +422,10 @@ func (b *Button) SetText(text string) {
 type Controls map[string]Control
 
 type Control struct {
-	V      interface{}
-	HTML   string
-	Events map[string]func(v string)
-	Static ConStatic
+	V      interface{}               // 控件的结构体指针，用于初始化时的处理
+	HTML   string                    // 控件的HTML代码
+	Events map[string]func(v string) // 控件事件列表，key为事件名称
+	Static ConStatic                 // 控件的静态数据，css和js等
 }
 
 type ConStatic struct {
