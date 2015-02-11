@@ -156,8 +156,6 @@ func Show(window interface{}) {
 					f, ok := events[msg.ID+msg.Event]
 					if ok {
 						f(msg.Value)
-					} else {
-						printError("unfind event:", msg.ID+msg.Event)
 					}
 				}
 			}
